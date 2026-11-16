@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-cream text-ink font-sans antialiased; }
+  h1, h2, h3 { @apply font-serif text-navy; }
+  :focus-visible { @apply outline outline-2 outline-offset-2 outline-gold-dark; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8; }
+  .btn { @apply inline-flex items-center justify-center rounded-sm px-6 py-3 text-sm font-semibold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-gold { @apply btn bg-gold text-navy hover:bg-gold-light; }
+  .btn-navy { @apply btn bg-navy text-cream hover:bg-navy-700; }
+  .btn-outline { @apply btn border border-gold text-cream hover:bg-gold/10; }
+  .btn-outline-dark { @apply btn border border-navy/30 text-navy hover:border-gold-dark hover:bg-gold/10; }
+  .input { @apply w-full rounded-sm border border-navy/20 bg-white px-3 py-2.5 text-sm placeholder:text-ink/40 focus:border-gold-dark; }
+  /* Arch frame: the Royal Nuts signature shape, used for hero and category tiles */
+  .arch { border-radius: 999px 999px 0 0; }
+  /* Hero: floating nuts drift on their own and lean toward the pointer (--px/--py set from JS) */
+  .hero-parallax {
+    transform: translate3d(calc(var(--px, 0) * var(--depth, 10) * 1px), calc(var(--py, 0) * var(--depth, 10) * 1px), 0);
+    transition: transform .25s ease-out;
+  }
+  .field-error { @apply mt-1 text-xs text-red-700; }
+}

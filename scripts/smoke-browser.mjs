@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+
+const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:3100';
+const browser = await chromium.launch({ channel: process.env.TEST_BROWSER_CHANNEL || 'msedge', headless: true });
+const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+const page = await context.newPage();
+const errors = [];
+page.on('pageerror', (error) => errors.push(error.message));
+try {
+  for (const path of ['/account', '/checkout']) {
+    const response = await context.request.get(base + path, { maxRedirects: 0 });
+    assert.equal(response.status(), 307, `${path} requires login`);
+    assert.match(response.headers().location, /\/login\?next=/);
+  }
+  await page.goto(base + '/signup');
+  await page.getByRole('button', { name: 'Create account', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.getByText('Enter your name.', { exact: true }).waitFor();
+  await page.getByText('Enter a valid email address.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Continue with Google' }).count(), 0);
+  let signupPayload;
+  await context.route('**/auth/v1/signup*', async (route) => {
+    signupPayload = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { id: '00000000-0000-4000-8000-000000000001', email: 'ui-test@example.invalid', aud: 'authenticated', role: 'authenticated', created_at: new Date().toISOString(), identities: [{ id: 'test' }], user_metadata: { full_name: 'UI Test' } } }) });
+  });
+  await page.getByLabel('Full name', { exact: true }).fill('UI Test');
+  await page.getByLabel('Email', { exact: true }).fill('ui-test@example.invalid');
+  await page.getByLabel('Password', { exact: true }).fill('Test-Password-123!');
+  await page.getByLabel('Confirm password', { exact: true }).fill('Test-Password-123!');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.getByText('Your account was created. Check your email to confirm it, then sign in.', { exact: true }).waitFor();
+  assert.equal(signupPayload.data.full_name, 'UI Test');
+  assert.equal(signupPayload.email, 'ui-test@example.invalid');
+  assert.ok(signupPayload.code_challenge, 'PKCE is enabled');
+  await mkdir('artifacts', { recursive: true });
+  await page.screenshot({ path: 'artifacts/signup-desktop.png', fullPage: true });
+  await page.goto(base + '/login');
+  await context.route('**/auth/v1/token?grant_type=password', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' }) }));
+  await context.route('**/auth/v1/recover*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await context.route('**/auth/v1/resend*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.getByLabel('Email', { exact: true }).fill('ui-test@example.invalid');
+  await page.getByLabel('Password', { exact: true }).fill('InvalidPassword123!');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByText('Incorrect email or password.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Forgot password?' }).click();
+  await page.getByText('If an account exists for ui-test@example.invalid, a password reset link is on its way. Check your spam folder too.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Resend confirmation email' }).click();
+  await page.getByText('If your account needs verification, a confirmation email is on its way.', { exact: true }).waitFor();
+  await page.goto(base + '/auth/callback?next=//evil.invalid');
+  assert.equal(new URL(page.url()).origin, new URL(base).origin);
+  await page.getByText('This sign-in link is invalid or expired. Request a new confirmation or password reset email.', { exact: true }).waitFor();
+  await page.goto(base + '/contact');
+  await page.getByRole('heading', { name: 'Get in touch' }).waitFor();
+  await page.getByLabel('Your name').fill('UI Test');
+  await page.getByLabel('Email', { exact: true }).fill('ui-test@example.invalid');
+  await page.getByLabel('Subject', { exact: true }).fill('UI integration test');
+  await page.getByLabel('Message', { exact: true }).fill('A test message that must never be stored.');
+  await page.locator('[name=website]').evaluate((input) => { input.value = 'bot-test'; });
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await page.getByText('Your message could not be sent.', { exact: true }).waitFor();
+  await page.screenshot({ path: 'artifacts/contact-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(base + '/contact');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'No mobile horizontal overflow');
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await page.getByRole('link', { name: 'Sign up', exact: true }).click();
+  await page.getByRole('heading', { name: 'Create your account' }).waitFor();
+  await page.screenshot({ path: 'artifacts/signup-mobile.png', fullPage: true });
+  await page.goto(base + '/contact');
+  await page.screenshot({ path: 'artifacts/contact-mobile.png', fullPage: true });
+  assert.deepEqual(errors, [], 'No browser runtime errors');
+  console.log('Browser checks passed: private-route redirects, signup validation and PKCE request, confirmation state, login errors, password-reset/resend states, callback redirect safety, contact server action, desktop/mobile navigation and layout. Auth network responses were mocked; no emails or customer records were created.');
+} finally { await context.close(); await browser.close(); }

@@ -1,0 +1,78 @@
+# Royal Nuts storefront
+
+A Next.js storefront with Supabase email/password authentication, saved customer profiles, private contact messages, newsletter subscriptions, and cash-on-delivery orders.
+
+## Run locally
+
+1. Install Node.js 20.19 or newer and run `npm install` in this folder.
+2. Copy `.env.example` to `.env.local` only if `.env.local` does not already exist. Keep existing values.
+3. Set `NEXT_PUBLIC_SUPABASE_URL` to the base project URL (`https://your-project-ref.supabase.co`), without `/rest/v1` or any dashboard path.
+4. Set `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, or the legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+5. Run the entire `supabase/schema.sql` in your project's Supabase SQL Editor. It is transactional and safe to rerun, preserves existing rows and backfills profiles for existing auth users.
+6. Run `npm run db:check`, then `npm run dev`. Open http://localhost:3000.
+
+`npm run build` creates the production build; `npm start` serves it. Restart the server after changing `.env.local`.
+
+## Authentication
+
+- `/signup`: full name, email, password, confirmation and password strength. User credentials are managed by Supabase Auth; passwords are never stored in public application tables.
+- `/login`: email/password login, forgot password and resend confirmation.
+- `/auth/callback`: exchanges the PKCE code into a cookie session. Failed/expired links show an actionable login error.
+- `/auth/confirm`: supports token-hash confirmation links, including links opened in a different browser.
+- `/update-password`: updates the signed-in user's password, including after a recovery link.
+- `/account`: server-protected saved name, phone, address and city, plus the signed-in customer's order history. Profile changes are stored in `profiles`.
+- Next.js `proxy.ts` refreshes cookies on private routes; protected pages and server actions independently verify the user. RLS enforces customer isolation in the database.
+
+In Supabase **Authentication > URL Configuration** set Site URL to `http://localhost:3000` and allow `http://localhost:3000/**` under Redirect URLs. Set the production Site URL and explicitly allow the production redirect paths when deploying. The callback URLs need to match the origin used in the browser.
+
+Email/password signup must be enabled. Enable email confirmation for verified accounts. With default email templates, open confirmation/reset links in the same browser used to request them (PKCE). To support opening them on another device, use these links in **Authentication > Email Templates**:
+
+Confirm signup:
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup&next=/account">Confirm email</a>
+```
+Reset password:
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery">Reset password</a>
+```
+
+Google login is optional. Enable/configure the Google provider in Supabase, then set `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH=true` and rebuild/restart. The button remains hidden by default. Email delivery and provider credentials are configured in Supabase, not in the browser app.
+
+## Contact, social links and newsletter
+
+- `/contact` has phone, email, address, WhatsApp, Instagram/Facebook links and a database-backed message form.
+- Messages are stored privately in `contact_messages` through a validation RPC with a per-email limit of five messages per hour. Public clients cannot read the inbox. Review messages in Supabase Table Editor and update their `status` as you handle them. The app stores messages; it does not send email notifications or reply automatically.
+- Newsletter signup uses an idempotent RPC. Public clients cannot read the subscriber list.
+- Edit the singleton `store_settings` row (`id = 1`) in Table Editor to configure public `phone`, `email`, `address`, `whatsapp`, `instagram`, `facebook` and `shipping_fee`. Blank contact values fall back to the corresponding `NEXT_PUBLIC_*` env settings.
+- WhatsApp accepts an international number with country code. Instagram/Facebook accept HTTPS profile/page URLs (not just handles). Follow buttons open the social page, where the visitor chooses whether to follow.
+- Do not put private values in `store_settings` or variables prefixed with `NEXT_PUBLIC_`.
+
+## Products and cash-on-delivery checkout
+
+Manage `products` in Supabase Table Editor. The top-level `id` and `active` columns control queries. Product details in `data` must follow `src/lib/types.ts`; variant IDs must be unique within a product. Use real names, descriptions, prices, photos and inventory. Set `data.isSample = false` before selling. Products with a zero price, no stock, or the sample flag cannot be ordered.
+
+The seed command imports missing placeholders without overwriting existing product IDs:
+
+1. Temporarily add the project's service-role key as `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`.
+2. Run `npm run seed`.
+3. Remove the service-role key afterward. It is not required for normal storefront use.
+
+Seed products have placeholder content, zero prices and zero stock; fill in your real catalog before accepting orders. A configured database with no active products intentionally shows an empty shop.
+
+`/checkout` requires a signed-in, email-verified customer. The only implemented payment method is cash on delivery. The delivery fee is read from `store_settings.shipping_fee` (initially zero/free). No bank, card or wallet payment is collected by this app.
+
+The `place_order` database function recalculates prices and delivery fees, locks inventory rows, updates stock, and inserts the order atomically. It accepts product/variant IDs and quantities; browser cart prices are not trusted. Failed orders roll back inventory. A per-user request key makes retries idempotent. Orders record snapshots of purchased items and delivery details and are visible only to their customer. The order history shows the latest 50 orders.
+
+Review orders in Table Editor and progress `status` through `pending`, `confirmed`, `shipped`, `delivered` or `cancelled`. Cancellation/refund workflows are not automated; if cancelling an order, the store must restore inventory as appropriate. Customer order emails, shipping integrations and online payment gateways are not included.
+
+Supabase public Storage images are supported from the configured project host. Local placeholder illustrations remain in `public/`.
+
+## Verification
+
+- `npm run db:check`: live read/invalid-input checks of the product catalog, Auth settings, store settings, contact/newsletter functions and anonymous-access restrictions. Creates no records and sends no emails.
+- `npm run typecheck`: TypeScript checks.
+- `npm run lint`: ESLint.
+- `npm run test:db`: runs the actual application SQL in isolated in-memory PostgreSQL (PGlite), with fixtures for Supabase auth roles. Verifies reruns, profile triggers, privacy, input validation, stock rollback, delivery/price calculation and retry protection. Does not use the live database. The unused pgcrypto extension statement is skipped in this harness.
+- `npm run test:browser`: run the built server on `127.0.0.1:3100` first (`npm start -- --hostname 127.0.0.1 --port 3100`). Headless Edge checks desktop/mobile navigation, signup validation, PKCE payloads, account/checkout redirects, login/reset/resend error states, callback safety and the contact action's honeypot. Auth requests are mocked; the contact test is rejected before saving. Set `TEST_BROWSER_CHANNEL=chrome` if Edge is unavailable, or `TEST_BASE_URL` for another local origin. Screenshots are saved in `artifacts/`.
+
+After setup, manually sign up with your own email, confirm it, sign in, edit your profile, and request/reset your password to verify actual email delivery. Automated browser tests do not claim to test the email provider or an actual customer login end to end.
