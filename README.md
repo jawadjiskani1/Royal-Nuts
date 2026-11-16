@@ -76,3 +76,13 @@ Supabase public Storage images are supported from the configured project host. L
 - `npm run test:browser`: run the built server on `127.0.0.1:3100` first (`npm start -- --hostname 127.0.0.1 --port 3100`). Headless Edge checks desktop/mobile navigation, signup validation, PKCE payloads, account/checkout redirects, login/reset/resend error states, callback safety and the contact action's honeypot. Auth requests are mocked; the contact test is rejected before saving. Set `TEST_BROWSER_CHANNEL=chrome` if Edge is unavailable, or `TEST_BASE_URL` for another local origin. Screenshots are saved in `artifacts/`.
 
 After setup, manually sign up with your own email, confirm it, sign in, edit your profile, and request/reset your password to verify actual email delivery. Automated browser tests do not claim to test the email provider or an actual customer login end to end.
+
+## Deploy to Vercel
+
+Import `jawadjiskani1/Royal-Nuts` into your Vercel account with the **Next.js** framework preset and the repository root (`.`) as Root Directory. The repository already contains `package.json` at its top level. Use the default install/build settings (`npm install` / `npm run build`) and Production Branch `main`.
+
+Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the Vercel project environment before building. Copy any configured public contact/social variables from `.env.local` into Vercel as well. Set `NEXT_PUBLIC_SITE_URL` to the final HTTPS production URL, or leave it unset to use the Vercel-provided production URL automatically. Do not copy the localhost site URL into production. The running storefront does not require a Supabase secret/service-role key.
+
+After deploying, set the Supabase Auth Site URL to the HTTPS production URL and allow that exact production origin followed by `/**` under Authentication > URL Configuration. Keep localhost redirect URLs for local development. Confirmation and password-reset links need the production allowlist to work on the live site. Rebuild after changing any `NEXT_PUBLIC_*` environment variables.
+
+Local env files, build output and test screenshots are excluded from CLI uploads by `.vercelignore`. Credentials must be configured through Vercel environment settings rather than committed or uploaded as env files.

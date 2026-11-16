@@ -16,7 +16,10 @@ export const site = {
   name: "Royal Nuts",
   slogan: "Eat Healthy. Stay Royal.",
   altSlogan: "Taste the Royal Goodness.",
-  url: value(process.env.NEXT_PUBLIC_SITE_URL) || "http://localhost:3000",
+  url: value(process.env.NEXT_PUBLIC_SITE_URL) ||
+    (value(process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL) ? `https://${value(process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL)}` : "") ||
+    (value(process.env.NEXT_PUBLIC_VERCEL_URL) ? `https://${value(process.env.NEXT_PUBLIC_VERCEL_URL)}` : "") ||
+    "http://localhost:3000",
   whatsapp: digits(process.env.NEXT_PUBLIC_WHATSAPP_NUMBER),
   phone: value(process.env.NEXT_PUBLIC_CONTACT_PHONE),
   email: value(process.env.NEXT_PUBLIC_CONTACT_EMAIL),
